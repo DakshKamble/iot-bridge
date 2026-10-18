@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Sensor Bridge · Live dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="config.js"></script>
+  <script defer src="vendor/mqtt.min.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">◈</span><div><span class="eyebrow">IOT BRIDGE</span><h1>Sensor dashboard</h1></div></div>
+      <span id="broker-state" class="pill" role="status">Broker disconnected</span>
+    </header>
+    <div class="intro"><div><h2>A live view of your sensors.</h2><p>Probe temperature, motion and strain — directly from MQTT.</p></div><span class="transport">WSS · TLS encrypted</span></div>
+    <main class="layout">
+      <section class="readings" aria-label="Sensor readings">
+        <div class="device-bar"><div><label for="device">DEVICE</label><select id="device" disabled><option value="">Waiting for a device</option></select></div><span id="device-state" class="pill">No telemetry</span></div>
+        <div class="sensor-grid">
+          <article class="card temperature" id="temperature-card">
+            <div class="card-top"><span class="eyebrow">PROBE TEMPERATURE</span><span class="sensor-tag">DS18B20 · D7</span></div>
+            <div class="big-reading"><span id="temperature">—</span><span class="unit">°C</span></div>
+            <p id="temperature-state" class="reading-note">Waiting for a probe reading</p>
+            <div class="card-foot"><span class="dot" aria-hidden="true"></span>Only the external probe temperature is shown.</div>
+          </article>
+          <article class="card" id="strain-card">
+            <div class="card-top"><span class="eyebrow">STRAIN AMPLIFIER</span><span class="sensor-tag">Y3 · D1</span></div>
+            <div class="big-reading"><span id="strain-voltage">—</span><span class="unit">mV</span></div>
+            <p id="strain-state" class="reading-note">Waiting for an analog sample</p>
+            <div class="mini-stats"><div><span>ADC counts</span><strong id="strain-adc">—</strong></div><div><span>Microstrain</span><strong id="strain-value">Uncalibrated</strong></div></div>
+          </article>
+        </div>
+        <article class="card motion" id="motion-card">
+          <div class="card-top"><div><span class="eyebrow">MOTION</span><h3 id="imu-model">MPU6050 / MPU6500</h3></div><span id="imu-state" class="sensor-tag">Waiting for data</span></div>
+          <table><thead><tr><th scope="col">Measurement</th><th scope="col"><span class="axis x">X</span></th><th scope="col"><span class="axis y">Y</span></th><th scope="col"><span class="axis z">Z</span></th></tr></thead><tbody>
+            <tr><th scope="row">Acceleration <small>m/s²</small></th><td id="accel-x">—</td><td id="accel-y">—</td><td id="accel-z">—</td></tr>
+            <tr><th scope="row">Angular velocity <small>rad/s</small></th><td id="gyro-x">—</td><td id="gyro-y">—</td><td id="gyro-z">—</td></tr>
+          </tbody></table>
+          <p class="reading-note">Acceleration includes gravity. Axes follow the sensor’s orientation.</p>
+        </article>
+        <div class="metadata"><div><span>Last sample</span><strong id="last-sample">—</strong></div><div><span>Wi-Fi signal</span><strong id="rssi">—</strong></div><div><span>Sequence</span><strong id="sequence">—</strong></div><div><span>Device uptime</span><strong id="uptime">—</strong></div></div>
+        <details class="card raw"><summary>Received JSON <span id="message-count">0 messages</span></summary><p id="raw-topic" class="topic">No telemetry received yet</p><pre id="raw-json">Connect to the broker to receive sensor data.</pre></details>
+      </section>
+      <aside class="connection">
+        <section class="card">
+          <div class="card-top"><div><span class="eyebrow">MQTT CONNECTION</span><h3>Connect your bridge</h3></div><span class="connection-icon" aria-hidden="true">↗</span></div>
+          <p class="help">The dashboard connects independently through secure WebSockets.</p>
+          <form id="connection-form">
+            <label for="host">Broker address</label><input id="host" type="text" required spellcheck="false" autocomplete="off">
+            <div class="form-row"><div><label for="port">WSS port</label><input id="port" type="number" min="1" max="65535" required></div><div><label for="path">Path</label><input id="path" type="text" required spellcheck="false"></div></div>
+            <label for="username">Username</label><input id="username" type="text" autocomplete="username" required>
+            <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+            <label for="prefix">Topic prefix</label><input id="prefix" type="text" required spellcheck="false">
+            <div class="buttons"><button id="connect" type="submit">Connect to broker <span aria-hidden="true">→</span></button><button id="disconnect" type="button" class="secondary" disabled>Disconnect</button></div>
+          </form>
+          <p id="connection-message" class="connection-message" role="status" aria-live="polite">Ready to connect. No data is simulated.</p>
+          <div class="connection-facts"><div><span>Browser connection</span><code id="endpoint">—</code></div><div><span>Telemetry subscription</span><code id="subscription">—</code></div><div><span>Device connection</span><strong>MQTT TLS · port 8883</strong></div><div><span>CA certificate expiry</span><strong>10 November 2031</strong></div></div>
+          <p class="help footnote">TLS certificates are verified by your browser. No CA upload is needed. Credentials are not saved to browser storage.</p>
+        </section>
+        <section class="activity"><span class="eyebrow">CONNECTION ACTIVITY</span><ol id="activity"><li>Waiting for connection.</li></ol></section>
+      </aside>
+    </main>
+    <footer><span>Sensor Bridge <span class="footer-separator">/</span> Local dashboard</span><span>Firmware and dashboard run independently.</span></footer>
+  </div>
+</body>
+</html>
