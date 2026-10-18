@@ -1,4 +1,4 @@
-# XIAO ESP32C3 — MPU6050 / MPU6500
+# XIAO ESP32C3 — MPU6050 / MPU6500 + DS18B20
 
 Simple MPU6050/MPU6500 firmware. Prints acceleration (m/s²), angular velocity (rad/s), and chip temperature (°C) to Serial every 500 ms. Retries if the sensor is missing or disconnected. Acceleration includes gravity; temperature is the chip temperature.
 
@@ -18,7 +18,7 @@ Leave INT, XDA and XCL disconnected. I2C pull-ups must go to 3.3 V; add 4.7kΩ f
 
 All settings are at the top of `src/main.cpp`: pins, preferred/alternate address, serial baud, sample interval, retry interval, ranges and filter bandwidth. The code tries both `0x68` and `0x69`. If changing serial baud, also update `monitor_speed` in `platformio.ini`.
 
-On startup and after a detection failure, it prints SDA/SCL idle levels, scans the I2C bus at 100 kHz and reads WHO_AM_I from responding MPU addresses. Both lines should idle high. No responding addresses points to power, wiring, pull-ups or hardware; an address response with an unexpected chip identity means this firmware does not support that chip. WHO_AM_I `0x68` selects MPU6050; `0x70` selects MPU6500. The firmware uses direct I2C register access, configures the appropriate filters, verifies range settings, checks complete 14-byte sensor reads, and applies the corresponding temperature formula. It needs only Arduino and Wire, with no external sensor library. Unknown identities remain rejected.
+On startup and after a detection failure, it prints SDA/SCL idle levels, scans the I2C bus at 100 kHz and reads WHO_AM_I from responding MPU addresses. Both lines should idle high. No responding addresses points to power, wiring, pull-ups or hardware; an address response with an unexpected chip identity means this firmware does not support that chip. WHO_AM_I `0x68` selects MPU6050; `0x70` selects MPU6500. The firmware uses direct I2C register access, configures the appropriate filters, verifies range settings, checks complete 14-byte sensor reads, and applies the corresponding temperature formula. The IMU needs only Arduino and Wire; the DS18B20 uses OneWire and DallasTemperature. Unknown identities remain rejected.
 
 ```sh
 pio run
@@ -26,6 +26,28 @@ pio run -t upload
 pio device monitor
 ```
 
-No Wi-Fi, MQTT, JSON, DS18B20 or strain-gauge code is included.
+No Wi-Fi, MQTT, JSON or strain-gauge code is included.
 
 Your reported WHO_AM_I of `0x70` matches the MPU6500 register map, so the earlier MPU6050 library rejected it. See [TDK register map](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6500-Register-Map2.pdf). Successful compilation does not verify hardware readings; upload and inspect the serial output.
+
+## DS18B20 probe on D7
+
+Remove the previous divider: no resistor from D7 to GND and no 20k series resistor between data and D7. A DS18B20 uses bidirectional digital 1-Wire communication, not an analog output.
+
+```text
+XIAO USB 5V -------------------- DS18B20 VDD
+XIAO GND ----------------------- DS18B20 GND
+XIAO D7 / GPIO20 ------+--------- DS18B20 DQ (data)
+                      |
+                    4.7k ohm
+                      |
+XIAO 3V3 -------------+
+```
+
+For a three-wire DS18B20 probe, VDD may use 5V while DQ is pulled up to 3.3V. Never pull DQ up to 5V or connect an adapter's built-in 5V data pull-up directly to the ESP32. A bare DS18B20 also supports 3.3V power. Identify probe wires from its supplier's pinout; colors vary. Use external power, not parasite power.
+
+A 4.7k pull-up is recommended. If you only have 10k resistors, two 10k resistors in parallel give 5k, close to 4.7k; connect that pair between D7 and 3V3. Do not reuse the divider topology.
+
+Settings DS_PIN, DS_INTERVAL_MS and DS_CONVERSION_MS are at the top of src/main.cpp. The firmware waits for a complete 12-bit conversion, prints a fresh probe reading about every two seconds, reports read/CRC failures and retries missing probes. Probe service runs even if the IMU is absent. IMU chip temperature and probe temperature have separate labels.
+
+Reference: [DS18B20 datasheet](https://www.analog.com/media/en/technical-documentation/data-sheets/ds18b20.pdf).

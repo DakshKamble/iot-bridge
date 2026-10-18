@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 // ================= CHANGE SETTINGS HERE =================
 const uint8_t SDA_PIN = 6;  // XIAO D4
@@ -18,6 +20,10 @@ const uint8_t ACCEL_RANGE = 2;
 const uint8_t GYRO_RANGE = 1;
 const uint8_t FILTER_SETTING = 4; // About 20 Hz low-pass; use 1..6.
 const uint8_t SAMPLE_RATE_DIVIDER = 9; // Internal sample rate: 1000/(1+divider) Hz.
+// DS18B20: DQ directly to D7; 4.7k pull-up from D7 to 3V3. NO divider.
+const uint8_t DS_PIN = 20; // XIAO D7
+const uint32_t DS_INTERVAL_MS = 2000;
+const uint32_t DS_CONVERSION_MS = 800; // 12-bit conversion needs up to 750ms.
 
 // ================= REGISTER DEFINITIONS =================
 // TDK MPU6050 / MPU6500 register maps. No external sensor library needed.
@@ -36,6 +42,60 @@ uint8_t sensorAddress = MPU_ADDRESS;
 uint8_t chipIdentity = 0;
 uint32_t lastReadMs = 0;
 uint32_t lastRetryMs = 0;
+
+OneWire oneWire(DS_PIN);
+DallasTemperature probe(&oneWire);
+DeviceAddress probeAddress;
+bool probeReady = false;
+bool probeConverting = false;
+uint32_t probeStartedMs = 0;
+uint32_t probeRetryMs = 0;
+
+void connectProbe() {
+  probeRetryMs = millis();
+  probe.begin();
+  probeReady = false;
+  probeConverting = false;
+  // Find a DS18B20 (family 0x28), rather than accepting any 1-Wire device.
+  for (uint8_t i = 0; i < probe.getDeviceCount(); ++i) {
+    if (probe.getAddress(probeAddress, i) && probeAddress[0] == 0x28) {
+      probeReady = true;
+      break;
+    }
+  }
+  if (!probeReady) {
+    Serial.printf("[DS18B20] Not detected on GPIO%u. Check DQ and pull-up to 3V3.\n", DS_PIN);
+    return;
+  }
+  probe.setResolution(probeAddress, 12);
+  probe.setWaitForConversion(false);
+  probe.requestTemperatures();
+  probeStartedMs = millis();
+  probeConverting = true;
+  Serial.println("[DS18B20] Detected; starting temperature conversion");
+}
+
+void serviceProbe() {
+  const uint32_t now = millis();
+  if (!probeReady) {
+    if (now - probeRetryMs >= RETRY_INTERVAL_MS) connectProbe();
+    return;
+  }
+  if (probeConverting && now - probeStartedMs >= DS_CONVERSION_MS) {
+    const float temperature = probe.getTempC(probeAddress); // Includes scratchpad CRC check.
+    if (temperature == DEVICE_DISCONNECTED_C || temperature < -55 || temperature > 125) {
+      Serial.println("[DS18B20] Read failed/disconnected. Retrying...");
+      probeReady = false;
+      probeRetryMs = now;
+    } else Serial.printf("[DS18B20] Probe temperature: %.2f C\n", temperature);
+    probeConverting = false;
+  }
+  if (probeReady && !probeConverting && now - probeStartedMs >= DS_INTERVAL_MS) {
+    probe.requestTemperatures();
+    probeStartedMs = millis();
+    probeConverting = true;
+  }
+}
 
 bool writeRegister(uint8_t reg, uint8_t value) {
   Wire.beginTransmission(sensorAddress);
@@ -130,7 +190,11 @@ int16_t signedValue(const uint8_t *data) {
 void setup() {
   Serial.begin(SERIAL_BAUD);
   delay(STARTUP_DELAY_MS);
-  Serial.println("\nMPU6050 / MPU6500 | XIAO ESP32C3");
+  Serial.println("\nMPU6050 / MPU6500 + DS18B20 | XIAO ESP32C3");
+  if (DS_CONVERSION_MS < 750 || DS_INTERVAL_MS < DS_CONVERSION_MS) {
+    Serial.println("[SETTINGS] DS conversion must be >=750ms and interval >=conversion");
+    while (true) delay(1000);
+  }
   if (ACCEL_RANGE > 3 || GYRO_RANGE > 3 || FILTER_SETTING < 1 || FILTER_SETTING > 6) {
     Serial.println("[SETTINGS] Range codes must be 0..3; filter must be 1..6");
     while (true) delay(1000);
@@ -140,10 +204,12 @@ void setup() {
     while (true) delay(1000);
   }
   Wire.setTimeOut(I2C_TIMEOUT_MS);
+  connectProbe();
   connectSensor();
 }
 
 void loop() {
+  serviceProbe(); // Runs even when the IMU is missing.
   if (!sensorReady) {
     if (millis() - lastRetryMs >= RETRY_INTERVAL_MS) connectSensor();
     delay(1);
